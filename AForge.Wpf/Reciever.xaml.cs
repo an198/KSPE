@@ -23,7 +23,7 @@ namespace AForge.Wpf
     {
         const string ip = "127.0.0.1";
         const int port = 9897;
-        IPEndPoint endPoint = new IPEndPoint(IPAddress.Loopback, port);
+        IPEndPoint RecieverendPoint = new IPEndPoint(IPAddress.Any, port);
         private bool isTrue = true;
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {

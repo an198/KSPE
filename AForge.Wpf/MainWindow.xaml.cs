@@ -42,9 +42,12 @@ namespace AForge.Wpf
         private IVideoSource _videoSource;
 
         BitmapImage bi;
-        const string ip = "127.0.0.1";
+        const string Myip = "172.20.10.4";
+        const string Parthnerip = "172.20.10.3";
         const int port = 9897;
-        IPEndPoint endPoint = new IPEndPoint(IPAddress.Loopback, port);
+        byte[] buffer = new byte[10000];
+        IPEndPoint MyendPoint = new IPEndPoint(IPAddress.Parse(Myip), port);
+        IPEndPoint ParthnerendPoint = new IPEndPoint(IPAddress.Parse(Parthnerip), port);
         private bool isTrue=true;
 
         public MainWindow()
@@ -53,59 +56,115 @@ namespace AForge.Wpf
             this.DataContext = this;
             GetVideoDevices();
         }
-
-
-        private async void VideoSender()
+        private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            using (Socket socket = new Socket(AddressFamily.InterNetwork,SocketType.Stream,ProtocolType.Tcp))
+            StopCamera();
+        }
+        private void btnStart_Click(object sender, RoutedEventArgs e)
+        {
+            //Thread t = new Thread(StartCamera);
+            //t.Start();
+            Thread tt = new Thread(VideoSender);
+            tt.Start();
+        }
+        private void btnStop_Click(object sender, RoutedEventArgs e)
+        {
+            const int port = 9897;
+            using (Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
             {
-                byte[] buffer = new byte[10000];
-                socket.Connect(endPoint);
-
-                //while(this.isTrue)
-                //{
-                    //if(videoPlayer.Source!=null)
-                    //{
-                    //MemoryStream stream = new MemoryStream(buffer);
-                    buffer  = ConvertBitmapSourceToByteArray(bi);
-                    socket.Send(buffer);
-                    Thread.Sleep(70);
-                socket.Disconnect(true);
-                    //}
-                //}
+                socket.Bind(MyendPoint);
+                socket.Listen(10);
+                socket.Accept();
+                while (isTrue)
+                {
+                    socket.Receive(buffer);
+                    VideoReciever.Source = ByteToImage(buffer);
+                }
             }
         }
 
 
-        private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+
+        private void VideoSender()
         {
-            StopCamera();
-            videoPlayer.Source = null;
+            using (Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
+            {
+                socket.Connect(ParthnerendPoint);
+
+                while (this.isTrue)
+                {
+                        buffer = ConvertBitmapSourceToByteArray(bi);
+                        socket.Send(buffer);
+                        Thread.Sleep(70);
+                }
+            }
         }
 
-        private void btnStart_Click(object sender, RoutedEventArgs e)
+
+
+        //private void video_NewFrame(object sender, Video.NewFrameEventArgs eventArgs)
+        //{
+        //    try
+        //    {
+
+        //        using (var bitmap = (Bitmap)eventArgs.Frame.Clone())
+        //        {
+        //            bi = bitmap.ToBitmapImage();
+        //        }
+        //        bi.Freeze(); // avoid cross thread operations and prevents leaks
+        //        Dispatcher.BeginInvoke(new ThreadStart(delegate { videoPlayer.Source = bi; }));
+        //    }
+        //    catch (Exception exc)
+        //    {
+        //        MessageBox.Show("Error on _videoSource_NewFrame:\n" + exc.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        //        StopCamera();
+        //    }
+        //}
+
+        public static byte[] ConvertBitmapSourceToByteArray(ImageSource imageSource)
         {
-            Thread t = new Thread(StartCamera);
-            t.Start();
-            Thread tt = new Thread(VideoSender);
-            tt.Start();
-            Reciever reciever = new Reciever();
-            reciever.Show();
+            byte[] info;
+            var image = imageSource as BitmapImage;
+            BitmapEncoder encoder = new BmpBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(image));
 
-
+            using (MemoryStream ms = new MemoryStream())
+            {
+                encoder.Save(ms);
+                info = ms.ToArray();
+                return info;
+            }
         }
+        public static ImageSource ByteToImage(byte[] imageData)
+        {
+            BitmapImage biImg = new BitmapImage();
+            MemoryStream ms = new MemoryStream(imageData);
+            biImg.BeginInit();
+            biImg.StreamSource = ms;
+            biImg.EndInit();
+            ImageSource imgSrc = biImg as ImageSource;
+            return imgSrc;
+        }
+        
+
+
+
+
+
+
 
         private void video_NewFrame(object sender, Video.NewFrameEventArgs eventArgs)
         {
             try
             {
-                
+
                 using (var bitmap = (Bitmap)eventArgs.Frame.Clone())
                 {
                     bi = bitmap.ToBitmapImage();
+                    buffer = ConvertBitmapSourceToByteArray(bi);
                 }
-                bi.Freeze(); // avoid cross thread operations and prevents leaks
-                Dispatcher.BeginInvoke(new ThreadStart(delegate { videoPlayer.Source = bi; }));
+                //bi.Freeze(); // avoid cross thread operations and prevents leaks
+                //Dispatcher.BeginInvoke(new ThreadStart(delegate { videoPlayer.Source = bi; VideoSender(); }));
             }
             catch (Exception exc)
             {
@@ -113,13 +172,6 @@ namespace AForge.Wpf
                 StopCamera();
             }
         }
-
-        private void btnStop_Click(object sender, RoutedEventArgs e)
-        {
-            StopCamera();
-            videoPlayer.Source = null;
-        }
-
         private void GetVideoDevices()
         {
             VideoDevices = new ObservableCollection<FilterInfo>();
@@ -134,6 +186,19 @@ namespace AForge.Wpf
             else
             {
                 MessageBox.Show("No video sources found", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected void OnPropertyChanged(string propertyName)
+        {
+            PropertyChangedEventHandler handler = this.PropertyChanged;
+            if (handler != null)
+            {
+                var e = new PropertyChangedEventArgs(propertyName);
+                handler(this, e);
             }
         }
 
@@ -155,28 +220,6 @@ namespace AForge.Wpf
                 _videoSource.NewFrame -= new NewFrameEventHandler(video_NewFrame);
             }
         }
-
-       
-
-        public event PropertyChangedEventHandler PropertyChanged;
-
-        protected void OnPropertyChanged(string propertyName)
-        {
-            PropertyChangedEventHandler handler = this.PropertyChanged;
-            if (handler != null)
-            {
-                var e = new PropertyChangedEventArgs(propertyName);
-                handler(this, e);
-            }
-        }
-
-
-
-
-
-
-
-
 
 
 
@@ -259,31 +302,6 @@ namespace AForge.Wpf
                 clientSocket.Shutdown(SocketShutdown.Both);
                 clientSocket.Close();
             }
-        }
-        public static byte[] ConvertBitmapSourceToByteArray(ImageSource imageSource)
-        {
-            byte[] info;
-            var image = imageSource as BitmapImage;
-            BitmapEncoder encoder = new BmpBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(image));
-
-            using (MemoryStream ms = new MemoryStream())
-            {
-                encoder.Save(ms);
-                info = ms.ToArray();
-                return info;
-            }
-        }
-
-        public static ImageSource ByteToImage(byte[] imageData)
-        {
-            BitmapImage biImg = new BitmapImage();
-            MemoryStream ms = new MemoryStream(imageData);
-            biImg.BeginInit();
-            biImg.StreamSource = ms;
-            biImg.EndInit();
-            ImageSource imgSrc = biImg as ImageSource;
-            return imgSrc;
-        }
+        }        
     }
 }
