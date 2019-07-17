@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -27,8 +28,11 @@ namespace AForge.Wpf
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
-    public partial class MainWindow : Window
+    public partial class MainWindow : Window, INotifyPropertyChanged
     {
+
+        #region Public properties
+
         public ObservableCollection<FilterInfo> VideoDevices { get; set; }
 
         public FilterInfo CurrentDevice
@@ -38,133 +42,64 @@ namespace AForge.Wpf
         }
         private FilterInfo _currentDevice;
 
-        
-        private IVideoSource _videoSource;
+        #endregion
 
-        BitmapImage bi;
-        const string Myip = "172.20.10.4";
-        const string Parthnerip = "172.20.10.3";
-        const int port = 9897;
-        byte[] buffer = new byte[10000];
-        IPEndPoint MyendPoint = new IPEndPoint(IPAddress.Parse(Myip), port);
-        IPEndPoint ParthnerendPoint = new IPEndPoint(IPAddress.Parse(Parthnerip), port);
-        private bool isTrue=true;
+
+        #region Private fields
+
+        private IVideoSource _videoSource;
+        
+        #endregion
 
         public MainWindow()
         {
             InitializeComponent();
             this.DataContext = this;
             GetVideoDevices();
+            this.Closing += MainWindow_Closing;
+
+            
+
         }
+
         private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             StopCamera();
         }
+
         private void btnStart_Click(object sender, RoutedEventArgs e)
         {
-            //Thread t = new Thread(StartCamera);
-            //t.Start();
-            Thread tt = new Thread(VideoSender);
-            tt.Start();
+            StartCamera();
         }
-        private void btnStop_Click(object sender, RoutedEventArgs e)
-        {
-            const int port = 9897;
-            using (Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
-            {
-                socket.Bind(MyendPoint);
-                socket.Listen(10);
-                socket.Accept();
-                while (isTrue)
-                {
-                    socket.Receive(buffer);
-                    VideoReciever.Source = ByteToImage(buffer);
-                }
-            }
-        }
-
-
-
-        private void VideoSender()
-        {
-            using (Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
-            {
-                socket.Connect(ParthnerendPoint);
-
-                while (this.isTrue)
-                {
-                        buffer = ConvertBitmapSourceToByteArray(bi);
-                        socket.Send(buffer);
-                        Thread.Sleep(70);
-                }
-            }
-        }
-
-
-
-        //private void video_NewFrame(object sender, Video.NewFrameEventArgs eventArgs)
-        //{
-        //    try
-        //    {
-
-        //        using (var bitmap = (Bitmap)eventArgs.Frame.Clone())
-        //        {
-        //            bi = bitmap.ToBitmapImage();
-        //        }
-        //        bi.Freeze(); // avoid cross thread operations and prevents leaks
-        //        Dispatcher.BeginInvoke(new ThreadStart(delegate { videoPlayer.Source = bi; }));
-        //    }
-        //    catch (Exception exc)
-        //    {
-        //        MessageBox.Show("Error on _videoSource_NewFrame:\n" + exc.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-        //        StopCamera();
-        //    }
-        //}
-
-        public static byte[] ConvertBitmapSourceToByteArray(ImageSource imageSource)
-        {
-            byte[] info;
-            var image = imageSource as BitmapImage;
-            BitmapEncoder encoder = new BmpBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(image));
-
-            using (MemoryStream ms = new MemoryStream())
-            {
-                encoder.Save(ms);
-                info = ms.ToArray();
-                return info;
-            }
-        }
-        public static ImageSource ByteToImage(byte[] imageData)
-        {
-            BitmapImage biImg = new BitmapImage();
-            MemoryStream ms = new MemoryStream(imageData);
-            biImg.BeginInit();
-            biImg.StreamSource = ms;
-            biImg.EndInit();
-            ImageSource imgSrc = biImg as ImageSource;
-            return imgSrc;
-        }
-        
-
-
-
-
-
-
 
         private void video_NewFrame(object sender, Video.NewFrameEventArgs eventArgs)
         {
             try
             {
+                byte[] byData;
+                BitmapImage bi;
+                IPAddress ipAddress = IPAddress.Parse("127.0.0.1");
+                IPEndPoint remoteEP = new IPEndPoint(ipAddress, 11000);
+                IPEndPoint myEP = new IPEndPoint(ipAddress, 11000);
+                Socket senDer = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                
+                senDer.Bind(myEP);
+                senDer.Connect(remoteEP);
 
                 using (var bitmap = (Bitmap)eventArgs.Frame.Clone())
                 {
                     bi = bitmap.ToBitmapImage();
-                    buffer = ConvertBitmapSourceToByteArray(bi);
                 }
-                //bi.Freeze(); // avoid cross thread operations and prevents leaks
-                //Dispatcher.BeginInvoke(new ThreadStart(delegate { videoPlayer.Source = bi; VideoSender(); }));
+                bi.Freeze(); // avoid cross thread operations and prevents leaks
+                Dispatcher.BeginInvoke(new ThreadStart(delegate {
+
+                    byData = ConvertBitmapSourceToByteArray(bi);
+                    senDer.Send(byData);
+                    senDer.Receive(byData,10000,SocketFlags.None);
+                    videoPlayer.Source = ToBitmapImage(byData); //bi;
+                    senDer.Close();
+                    Thread.Sleep(5);
+                }));
             }
             catch (Exception exc)
             {
@@ -172,6 +107,12 @@ namespace AForge.Wpf
                 StopCamera();
             }
         }
+
+        private void btnStop_Click(object sender, RoutedEventArgs e)
+        {
+            StopCamera();
+        }
+
         private void GetVideoDevices()
         {
             VideoDevices = new ObservableCollection<FilterInfo>();
@@ -186,19 +127,6 @@ namespace AForge.Wpf
             else
             {
                 MessageBox.Show("No video sources found", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-
-        public event PropertyChangedEventHandler PropertyChanged;
-
-        protected void OnPropertyChanged(string propertyName)
-        {
-            PropertyChangedEventHandler handler = this.PropertyChanged;
-            if (handler != null)
-            {
-                var e = new PropertyChangedEventArgs(propertyName);
-                handler(this, e);
             }
         }
 
@@ -221,87 +149,47 @@ namespace AForge.Wpf
             }
         }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        static void ExecuteClient()
+        public static byte[] ConvertBitmapSourceToByteArray(ImageSource imageSource)
         {
-            IPHostEntry ipHost = Dns.GetHostEntry(Dns.GetHostName());
-            IPAddress ipAddr = ipHost.AddressList[0];
-            IPEndPoint localEndPoint = new IPEndPoint(ipAddr, 11111);
-            // Creation TCP/IP Socket using  
-            // Socket Class Costructor 
-            Socket sender = new Socket(ipAddr.AddressFamily,
-                       SocketType.Stream, ProtocolType.Tcp);
-            sender.Connect(localEndPoint);
-            byte[] messageSent = Encoding.ASCII.GetBytes("Test Client<EOF>");
-            int byteSent = sender.Send(messageSent);
+            byte[] info;
+            var image = imageSource as BitmapImage;
+            BitmapEncoder encoder = new BmpBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(image));
 
-            byte[] messageReceived = new byte[1024];
-            int byteRecv = sender.Receive(messageReceived);
-            sender.Shutdown(SocketShutdown.Both);
-            sender.Close();
+            using (MemoryStream ms = new MemoryStream())
+            {
+                encoder.Save(ms);
+                info = ms.ToArray();
+                return info;
+            }
+        }
+        public BitmapImage ToBitmapImage(byte[] array)
+        {
+            using (var ms = new System.IO.MemoryStream(array))
+            {
+                var image = new BitmapImage();
+                image.BeginInit();
+                image.CacheOption = BitmapCacheOption.OnLoad; // here
+                image.StreamSource = ms;
+                image.EndInit();
+                return image;
+            }
         }
 
+        #region INotifyPropertyChanged members
 
+        public event PropertyChangedEventHandler PropertyChanged;
 
-        public static void ExecuteServer()
+        protected void OnPropertyChanged(string propertyName)
         {
-            IPHostEntry ipHost = Dns.GetHostEntry(Dns.GetHostName());
-            IPAddress ipAddr = ipHost.AddressList[0];
-            IPEndPoint localEndPoint = new IPEndPoint(ipAddr, 11111);
-            Socket listener = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            listener.Bind(localEndPoint);
-            listener.Listen(10);
-            while (true)
+            PropertyChangedEventHandler handler = this.PropertyChanged;
+            if (handler != null)
             {
-                Socket clientSocket = listener.Accept();
-                byte[] bytes = new Byte[1024];
-                string data = null;
-
-                while (true)
-                {
-                    int numByte = clientSocket.Receive(bytes);
-                    data += Encoding.ASCII.GetString(bytes, 0, numByte);
-                    if (data.IndexOf("<EOF>") > -1) break;
-                }
-
-                Console.WriteLine("Text received -> {0} ", data);
-                byte[] message = Encoding.ASCII.GetBytes("Test Server");
-                clientSocket.Send(message);
-                clientSocket.Shutdown(SocketShutdown.Both);
-                clientSocket.Close();
+                var e = new PropertyChangedEventArgs(propertyName);
+                handler(this, e);
             }
-        }        
+        } 
+
+        #endregion
     }
 }

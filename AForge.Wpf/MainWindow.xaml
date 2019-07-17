@@ -5,11 +5,11 @@
         xmlns:local="clr-namespace:AForge.Wpf"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         Title="MainWindow"
-        Width="900"
+        Width="422.669"
         Height="350"
-        mc:Ignorable="d" Closing="MainWindow_Closing">
-    <Grid Width="400" HorizontalAlignment="Left">
-        <Image x:Name="videoPlayer" Margin="0" HorizontalAlignment="Right" Width="400" />
+        mc:Ignorable="d">
+    <Grid>
+        <Image x:Name="videoPlayer" Margin="10,0,10,70" />
         <ComboBox x:Name="comboBox"
                   Width="167"
                   Height="21"
@@ -31,14 +31,13 @@
                 HorizontalAlignment="Left"
                 VerticalAlignment="Bottom"
                 Click="btnStart_Click"
-                Content="Send" />
-        <Button x:Name="RecieveButton" Width="67"
+                Content="Start" />
+        <Button Width="67"
                 Height="21"
                 Margin="296,0,0,25"
                 HorizontalAlignment="Left"
                 VerticalAlignment="Bottom"
                 Click="btnStop_Click"
-                Content="Recieve" />
-        <Image x:Name="VideoReciever" Margin="0,0,-490,0" Width="400" HorizontalAlignment="Right"/>
+                Content="Stop" />
     </Grid>
 </Window>
